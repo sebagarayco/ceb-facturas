@@ -3,6 +3,7 @@ import time
 import csv
 import re
 import shutil
+import gspread
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -10,6 +11,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from pdf_extractor import extract_text_from_pdf
+from google.oauth2.service_account import Credentials
 
 # Obtener credenciales desde variables de entorno
 CEB_USERNAME = os.getenv("CEB_USERNAME")
@@ -24,21 +26,11 @@ CUENTAS_URL = "https://oficinavirtual.ceb.coop/ov/cuentas.xhtml"
 CARPETA_DESCARGAS = os.getenv("CARPETA_DESCARGAS", "downloads")
 CARPETA_SALIDA = os.getenv("CARPETA_SALIDA", "outputs")
 ARCHIVO_CSV = os.getenv("ARCHIVO_CSV", "output.csv")
+GOOGLE_SPREADSHEET = os.getenv("GOOGLE_SPREADSHEET", "false").lower() == "true"
 
 # Crear carpetas si no existen
 os.makedirs(CARPETA_DESCARGAS, exist_ok=True)
 os.makedirs(CARPETA_SALIDA, exist_ok=True)
-
-def limpiar_carpetas():
-    """Limpia SOLO la carpeta de descargas, pero NO borra outputs."""
-    for archivo in os.listdir(CARPETA_DESCARGAS):
-        ruta_archivo = os.path.join(CARPETA_DESCARGAS, archivo)
-        try:
-            if os.path.isfile(ruta_archivo):
-                os.remove(ruta_archivo)
-        except Exception as e:
-            print(f"⚠️ Error al eliminar {ruta_archivo}: {e}")
-    print("♻️ Limpiando carpeta de descargas...")
 
 def iniciar_sesion():
     """Inicia sesión en la página web y devuelve una instancia del WebDriver."""
@@ -63,44 +55,91 @@ def iniciar_sesion():
     time.sleep(5)  # Esperar a que el inicio de sesión se complete
     return driver
 
+def enviar_a_google_sheets(datos, spreadsheet_name="Facturas CEB", worksheet_name="Datos"):
+    """Envía los datos procesados a una hoja de cálculo de Google Sheets."""
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_file("credentials.json", scopes=scope)
+    client = gspread.authorize(creds)
+
+    # Abrir el spreadsheet
+    try:
+        sheet = client.open(spreadsheet_name)
+    except gspread.SpreadsheetNotFound:
+        sheet = client.create(spreadsheet_name)
+        sheet.share('sebagarayco@gmail.com', perm_type='user', role='writer')
+
+    try:
+        worksheet = sheet.worksheet(worksheet_name)
+        worksheet.clear()
+    except gspread.WorksheetNotFound:
+        worksheet = sheet.add_worksheet(title=worksheet_name, rows="100", cols="20")
+
+    # Encabezados
+    encabezados = [
+        "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
+        "Consumo", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
+    ]
+    
+    worksheet.append_row(encabezados)
+    for fila in datos:
+        worksheet.append_row(fila)
+
+    print(f"📤 Datos enviados a Google Sheets: {spreadsheet_name} -> {worksheet_name}")
+    print(f"   📄 Link de la hoja: https://docs.google.com/spreadsheets/d/{sheet.id}")
+
 def descargar_pdfs(driver):
-    """Descarga todos los PDFs y sobrescribe si ya existen."""
+    """Descarga los PDFs si no existen localmente, basándose en el nombre del período."""
     driver.get(CUENTAS_URL)
     time.sleep(3)
 
     espera = WebDriverWait(driver, 10)
-    cantidad_pdfs = 0
+    cantidad_descargadas = 0
 
-    while True:
+    # Esperar a que la tabla esté presente
+    tabla = espera.until(EC.presence_of_element_located((By.ID, "form:tblFacturasCuenta_data")))
+    filas = tabla.find_elements(By.TAG_NAME, "tr")
+
+    for index, fila in enumerate(filas):
+        celdas = fila.find_elements(By.TAG_NAME, "td")
+
+        if len(celdas) < 2:
+            continue  # Saltar filas con celdas inesperadas
+
+        nombre_periodo = celdas[1].text.strip().replace("/", "-")
+        nombre_archivo = f"{nombre_periodo}.pdf"
+        ruta_archivo = os.path.join(CARPETA_DESCARGAS, nombre_archivo)
+
+        if os.path.exists(ruta_archivo):
+            print(f"⏭️  Ya existe: {nombre_archivo}, saltando descarga.")
+            continue
+
         try:
-            boton_descarga = espera.until(
-                EC.element_to_be_clickable((By.ID, f"form:tblFacturasCuenta:{cantidad_pdfs}:j_idt190"))
-            )
-            
-            # Obtener el nombre de archivo esperado
-            nombre_archivo = f"factura_{cantidad_pdfs}.pdf"
-            ruta_archivo = os.path.join(CARPETA_DESCARGAS, nombre_archivo)
-
-            # Si el archivo ya existe, lo eliminamos antes de descargar
-            if os.path.exists(ruta_archivo):
-                os.remove(ruta_archivo)
-                print(f"♻️ Reemplazando archivo: {nombre_archivo}")
-
+            # El botón de descarga está en la última celda (o posición fija)
+            boton_descarga = fila.find_element(By.TAG_NAME, "button")
             boton_descarga.click()
-            time.sleep(1)  # Esperar a que la descarga inicie
+            print(f"⬇️  Descargando: {nombre_archivo}")
 
-            cantidad_pdfs += 1
-        except:
-            print(f"✅ Se descargaron {cantidad_pdfs} PDFs.")
-            break
+            # Esperar un momento para que el navegador descargue
+            time.sleep(2)
 
-    time.sleep(2)  # Esperar a que todas las descargas finalicen
+            # Buscar el archivo más reciente descargado
+            archivos_pdf = [f for f in os.listdir(CARPETA_DESCARGAS) if f.endswith(".pdf")]
+            if archivos_pdf:
+                ultimo_archivo = max(
+                    [os.path.join(CARPETA_DESCARGAS, f) for f in archivos_pdf],
+                    key=os.path.getctime
+                )
+                shutil.move(ultimo_archivo, ruta_archivo)
+                cantidad_descargadas += 1
 
-    # Obtener nombres de archivos PDF descargados
-    archivos_pdf = [
+        except Exception as e:
+            print(f"⚠️ Error al intentar descargar para {nombre_periodo}: {e}")
+            continue
+
+    print(f"✅ Finalizado. Se descargaron {cantidad_descargadas} archivos nuevos.")
+    return [
         os.path.join(CARPETA_DESCARGAS, f) for f in os.listdir(CARPETA_DESCARGAS) if f.endswith(".pdf")
     ]
-    return archivos_pdf
 
 def extraer_campos(texto):
     """Extrae los valores de los campos requeridos desde el texto."""
@@ -197,8 +236,14 @@ def procesar_pdfs(archivos_pdf):
 
     print(f"✅ Se procesaron {len(archivos_pdf)} PDFs. Datos guardados en {ARCHIVO_CSV}.")
 
+    # Enviar a Google Sheets
+    if GOOGLE_SPREADSHEET:
+        print("📊 Enviando datos a Google Sheets...")
+        enviar_a_google_sheets(datos_extraidos)
+    else:
+        print("⚠️  Envío a Google Spreadsheet desactivado. Para activarlo, setear GOOGLE_SPREADSHEET='true' en las variables de entorno.")        
+
 if __name__ == "__main__":
-    limpiar_carpetas()  # Limpiar carpetas antes de ejecutar
     driver = iniciar_sesion()
     archivos_pdf = descargar_pdfs(driver)
     driver.quit()

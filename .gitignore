@@ -2,3 +2,4 @@
 downloads
 output*
 __pycache__
+*.json
