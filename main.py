@@ -3,6 +3,7 @@ import time
 import csv
 import re
 import shutil
+import gspread
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -10,6 +11,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from pdf_extractor import extract_text_from_pdf
+from google.oauth2.service_account import Credentials
 
 # Obtener credenciales desde variables de entorno
 CEB_USERNAME = os.getenv("CEB_USERNAME")
@@ -62,6 +64,39 @@ def iniciar_sesion():
 
     time.sleep(5)  # Esperar a que el inicio de sesión se complete
     return driver
+
+def enviar_a_google_sheets(datos, spreadsheet_name="Facturas CEB", worksheet_name="Datos"):
+    """Envía los datos procesados a una hoja de cálculo de Google Sheets."""
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_file("credentials.json", scopes=scope)
+    client = gspread.authorize(creds)
+
+    # Abrir el spreadsheet
+    try:
+        sheet = client.open(spreadsheet_name)
+        sheet.share('sebagarayco@gmail.com', perm_type='user', role='writer')
+    except gspread.SpreadsheetNotFound:
+        sheet = client.create(spreadsheet_name)
+        sheet.share('sebagarayco@gmail.com', perm_type='user', role='writer')
+
+    try:
+        worksheet = sheet.worksheet(worksheet_name)
+        worksheet.clear()
+    except gspread.WorksheetNotFound:
+        worksheet = sheet.add_worksheet(title=worksheet_name, rows="100", cols="20")
+
+    # Encabezados
+    encabezados = [
+        "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
+        "Consumo", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
+    ]
+    
+    worksheet.append_row(encabezados)
+    for fila in datos:
+        worksheet.append_row(fila)
+
+    print(f"📤 Datos enviados a Google Sheets: {spreadsheet_name} -> {worksheet_name}")
+    print(f"   📄 Link de la hoja: https://docs.google.com/spreadsheets/d/{sheet.id}")
 
 def descargar_pdfs(driver):
     """Descarga todos los PDFs y sobrescribe si ya existen."""
@@ -196,6 +231,9 @@ def procesar_pdfs(archivos_pdf):
         escritor.writerows(datos_extraidos)
 
     print(f"✅ Se procesaron {len(archivos_pdf)} PDFs. Datos guardados en {ARCHIVO_CSV}.")
+
+    # Enviar a Google Sheets
+    enviar_a_google_sheets(datos_extraidos)
 
 if __name__ == "__main__":
     limpiar_carpetas()  # Limpiar carpetas antes de ejecutar
