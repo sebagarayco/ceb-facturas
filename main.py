@@ -64,6 +64,7 @@ def enviar_a_google_sheets(datos, spreadsheet_name="Facturas CEB", worksheet_nam
     # Abrir el spreadsheet
     try:
         sheet = client.open(spreadsheet_name)
+        sheet.share('isebedio@gmail.com', perm_type='user', role='reader')
     except gspread.SpreadsheetNotFound:
         sheet = client.create(spreadsheet_name)
         sheet.share(CEB_USERNAME, perm_type='user', role='writer')
@@ -77,7 +78,7 @@ def enviar_a_google_sheets(datos, spreadsheet_name="Facturas CEB", worksheet_nam
     # Encabezados
     encabezados = [
         "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
-        "Consumo", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
+        "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
     ]
     
     worksheet.append_row(encabezados)
@@ -230,7 +231,7 @@ def procesar_pdfs(archivos_pdf):
         escritor = csv.writer(archivo_csv)
         escritor.writerow([
             "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
-            "Consumo", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
+            "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
         ])
         escritor.writerows(datos_extraidos)
 
