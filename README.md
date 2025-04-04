@@ -21,12 +21,14 @@ Este script automatiza la descarga de facturas de electricidad desde la Oficina 
    ```sh
    export CEB_USERNAME="tu_email@example.com"
    export CEB_PASSWORD="tu_contraseña"
+   export GOOGLE_SPREADSHEET=true # Opcional para Google Docs
    ```
 
    En Windows (PowerShell):
    ```powershell
    $env:CEB_USERNAME="tu_email@example.com"
    $env:CEB_PASSWORD="tu_contraseña"
+   $env:GOOGLE_SPREADHSEET="true" # Opcional para Google Docs
    ```
 
 2. Ejecuta el script:
@@ -44,7 +46,7 @@ Este script automatiza la descarga de facturas de electricidad desde la Oficina 
    - Fecha de vencimiento.
    - Cargo fijo y valor del kWh.
    - Período de facturación.
-4. **Guarda los datos en** `output.csv` y también los sube a Google Sheets (por defecto, a una hoja llamada "Datos" dentro del documento "Facturas CEB").
+4. **Guarda los datos en** `output.csv` y también los sube a Google Sheets (por defecto, a una hoja llamada "Sheet1" dentro del documento "Facturas CEB").
 
 ## Directorios y Archivos
 
@@ -81,12 +83,18 @@ Este script utiliza:
    - Una vez creada, haz clic en la cuenta de servicio y luego en **Claves** > **Agregar clave** > **JSON**.
    - Se descargará un archivo `.json` que deberás mover a una ubicación segura.
 5. Comparte el Google Spreadsheet con el correo de la cuenta de servicio (ej. `nombre-cuenta@nombre-proyecto.iam.gserviceaccount.com`) con permisos de **Editor**.
-6. Usa la ruta del archivo `.json` descargado en la variable de entorno `GOOGLE_SHEETS_CREDENTIALS_JSON`.
+6. Descargar credenciales y colocarlar en archivo `credentials.json`.
 
-## Ejemplo de Salida (`output.csv`)
+## Output
+
+- CSV:
 
 ```csv
 Archivo,Periodo,Emitida el,Fecha Límite de Pago,Vencimiento,Consumo,Consumo Último Año,Consumo Promedio Diario,Cargo Fijo,Valor KwH
 ENE 2024.pdf,Enero 2024,01/01/2024,10/01/2024,15/01/2024,350,4200,11.5,500.00,12.34
 FEB 2024.pdf,Febrero 2024,01/02/2024,10/02/2024,15/02/2024,360,4300,12.0,505.00,12.50
 ```
+
+- Google Docs:
+
+![img](img/googledocs.png)

@@ -55,7 +55,7 @@ def iniciar_sesion():
     time.sleep(5)  # Esperar a que el inicio de sesión se complete
     return driver
 
-def enviar_a_google_sheets(datos, spreadsheet_name="Facturas CEB", worksheet_name="Datos"):
+def enviar_a_google_sheets(datos, spreadsheet_name="Facturas CEB", worksheet_name="Sheet1"):
     """Envía los datos procesados a una hoja de cálculo de Google Sheets."""
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_file("credentials.json", scopes=scope)
@@ -66,7 +66,7 @@ def enviar_a_google_sheets(datos, spreadsheet_name="Facturas CEB", worksheet_nam
         sheet = client.open(spreadsheet_name)
     except gspread.SpreadsheetNotFound:
         sheet = client.create(spreadsheet_name)
-        sheet.share('sebagarayco@gmail.com', perm_type='user', role='writer')
+        sheet.share(CEB_USERNAME, perm_type='user', role='writer')
 
     try:
         worksheet = sheet.worksheet(worksheet_name)
