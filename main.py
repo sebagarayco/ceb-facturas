@@ -26,6 +26,7 @@ CUENTAS_URL = "https://oficinavirtual.ceb.coop/ov/cuentas.xhtml"
 CARPETA_DESCARGAS = os.getenv("CARPETA_DESCARGAS", "downloads")
 CARPETA_SALIDA = os.getenv("CARPETA_SALIDA", "outputs")
 ARCHIVO_CSV = os.getenv("ARCHIVO_CSV", "output.csv")
+GOOGLE_SPREADSHEET = os.getenv("GOOGLE_SPREADSHEET", "false").lower() == "true"
 
 # Crear carpetas si no existen
 os.makedirs(CARPETA_DESCARGAS, exist_ok=True)
@@ -109,14 +110,14 @@ def descargar_pdfs(driver):
         ruta_archivo = os.path.join(CARPETA_DESCARGAS, nombre_archivo)
 
         if os.path.exists(ruta_archivo):
-            print(f"⏭️ Ya existe: {nombre_archivo}, saltando descarga.")
+            print(f"⏭️  Ya existe: {nombre_archivo}, saltando descarga.")
             continue
 
         try:
             # El botón de descarga está en la última celda (o posición fija)
             boton_descarga = fila.find_element(By.TAG_NAME, "button")
             boton_descarga.click()
-            print(f"⬇️ Descargando: {nombre_archivo}")
+            print(f"⬇️  Descargando: {nombre_archivo}")
 
             # Esperar un momento para que el navegador descargue
             time.sleep(2)
@@ -236,7 +237,11 @@ def procesar_pdfs(archivos_pdf):
     print(f"✅ Se procesaron {len(archivos_pdf)} PDFs. Datos guardados en {ARCHIVO_CSV}.")
 
     # Enviar a Google Sheets
-    enviar_a_google_sheets(datos_extraidos)
+    if GOOGLE_SPREADSHEET:
+        print("📊 Enviando datos a Google Sheets...")
+        enviar_a_google_sheets(datos_extraidos)
+    else:
+        print("⚠️  Envío a Google Spreadsheet desactivado. Para activarlo, setear GOOGLE_SPREADSHEET='true' en las variables de entorno.")        
 
 if __name__ == "__main__":
     driver = iniciar_sesion()

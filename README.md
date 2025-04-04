@@ -12,7 +12,6 @@ Este script automatiza la descarga de facturas de electricidad desde la Oficina 
 3. Configurar las credenciales en variables de entorno:
    - `CEB_USERNAME`: Correo electrónico asociado a la cuenta de la CEB.
    - `CEB_PASSWORD`: Contraseña de la cuenta de la CEB.
-   - `GOOGLE_SHEETS_CREDENTIALS_JSON`: Ruta al archivo JSON con las credenciales del servicio de Google Sheets.
 
 ## Uso
 
@@ -22,14 +21,12 @@ Este script automatiza la descarga de facturas de electricidad desde la Oficina 
    ```sh
    export CEB_USERNAME="tu_email@example.com"
    export CEB_PASSWORD="tu_contraseña"
-   export GOOGLE_SHEETS_CREDENTIALS_JSON="/ruta/a/credenciales.json"
    ```
 
    En Windows (PowerShell):
    ```powershell
    $env:CEB_USERNAME="tu_email@example.com"
    $env:CEB_PASSWORD="tu_contraseña"
-   $env:GOOGLE_SHEETS_CREDENTIALS_JSON="C:\ruta\a\credenciales.json"
    ```
 
 2. Ejecuta el script:
