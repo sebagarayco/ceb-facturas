@@ -316,16 +316,25 @@ def procesar_pdfs(archivos_pdf):
         return
 
     # Escribir nuevas líneas en el CSV
+    headers = [
+        "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
+        "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
+    ]
     archivo_existe = os.path.exists(ARCHIVO_CSV)
+    escribir_encabezados = True
+    
+    if archivo_existe:
+        with open(ARCHIVO_CSV, "r", encoding="utf-8") as archivo_csv:
+            primera_linea = archivo_csv.readline().strip()
+            if primera_linea:
+                escribir_encabezados = primera_linea.split(",") != headers
+    
     with open(ARCHIVO_CSV, "a", newline="", encoding="utf-8") as archivo_csv:
         escritor = csv.writer(archivo_csv)
-        if not archivo_existe:
-            escritor.writerow([
-                "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
-                "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
-            ])
+        if not archivo_existe or escribir_encabezados:
+            escritor.writerow(headers)
         escritor.writerows(datos_extraidos)
-
+    
     print(f"✅ Se procesaron {len(datos_extraidos)} archivos nuevos. Actualizado {ARCHIVO_CSV}.")
 
     if GOOGLE_SPREADSHEET:
