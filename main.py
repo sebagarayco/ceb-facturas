@@ -6,6 +6,7 @@ import shutil
 import gspread
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import Select
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -64,7 +65,6 @@ def enviar_a_google_sheets(datos, spreadsheet_name="Facturas CEB", worksheet_nam
     # Abrir el spreadsheet
     try:
         sheet = client.open(spreadsheet_name)
-        sheet.share('isebedio@gmail.com', perm_type='user', role='reader')
     except gspread.SpreadsheetNotFound:
         sheet = client.create(spreadsheet_name)
         sheet.share(CEB_USERNAME, perm_type='user', role='writer')
@@ -94,48 +94,82 @@ def descargar_pdfs(driver):
     time.sleep(3)
 
     espera = WebDriverWait(driver, 10)
+
+    # Cambiar el dropdown de cantidad de filas a 36 (máximo)
+    try:
+        selector_filas = espera.until(EC.presence_of_element_located((By.ID, "form:tblFacturasCuenta:j_id19")))
+        opciones = selector_filas.find_elements(By.TAG_NAME, "option")
+        for opcion in opciones:
+            if opcion.text.strip() == "36":
+                opcion.click()
+                time.sleep(2)  # Esperar recarga
+                break
+    except Exception as e:
+        print(f"⚠️ No se pudo cambiar la cantidad de filas a 36: {e}")
+
     cantidad_descargadas = 0
+    facturas_descargadas = set()
 
-    # Esperar a que la tabla esté presente
-    tabla = espera.until(EC.presence_of_element_located((By.ID, "form:tblFacturasCuenta_data")))
-    filas = tabla.find_elements(By.TAG_NAME, "tr")
-
-    for index, fila in enumerate(filas):
-        celdas = fila.find_elements(By.TAG_NAME, "td")
-
-        if len(celdas) < 2:
-            continue  # Saltar filas con celdas inesperadas
-
-        nombre_periodo = celdas[1].text.strip().replace("/", "-")
-        nombre_archivo = f"{nombre_periodo}.pdf"
-        ruta_archivo = os.path.join(CARPETA_DESCARGAS, nombre_archivo)
-
-        if os.path.exists(ruta_archivo):
-            print(f"⏭️  Ya existe: {nombre_archivo}, saltando descarga.")
-            continue
-
+    while True:
         try:
-            # El botón de descarga está en la última celda (o posición fija)
-            boton_descarga = fila.find_element(By.TAG_NAME, "button")
-            boton_descarga.click()
-            print(f"⬇️  Descargando: {nombre_archivo}")
+            tabla = espera.until(EC.presence_of_element_located((By.ID, "form:tblFacturasCuenta_data")))
+            filas = tabla.find_elements(By.TAG_NAME, "tr")
 
-            # Esperar un momento para que el navegador descargue
-            time.sleep(2)
+            for fila in filas:
+                celdas = fila.find_elements(By.TAG_NAME, "td")
 
-            # Buscar el archivo más reciente descargado
-            archivos_pdf = [f for f in os.listdir(CARPETA_DESCARGAS) if f.endswith(".pdf")]
-            if archivos_pdf:
-                ultimo_archivo = max(
-                    [os.path.join(CARPETA_DESCARGAS, f) for f in archivos_pdf],
-                    key=os.path.getctime
-                )
-                shutil.move(ultimo_archivo, ruta_archivo)
-                cantidad_descargadas += 1
+                if len(celdas) < 2:
+                    continue
+
+                nombre_periodo = celdas[1].text.strip().replace("/", "-")
+                if nombre_periodo in facturas_descargadas:
+                    continue  # Evitar procesar dos veces si estamos paginando
+                facturas_descargadas.add(nombre_periodo)
+
+                nombre_archivo = f"{nombre_periodo}.pdf"
+                ruta_archivo = os.path.join(CARPETA_DESCARGAS, nombre_archivo)
+
+                if os.path.exists(ruta_archivo):
+                    print(f"⏭️  Ya existe: {nombre_archivo}, saltando descarga.")
+                    continue
+
+                try:
+                    boton_descarga = fila.find_element(By.TAG_NAME, "button")
+                    boton_descarga.click()
+                    print(f"⬇️  Descargando: {nombre_archivo}")
+                    time.sleep(2)
+
+                    archivos_pdf = [f for f in os.listdir(CARPETA_DESCARGAS) if f.endswith(".pdf")]
+                    if archivos_pdf:
+                        ultimo_archivo = max(
+                            [os.path.join(CARPETA_DESCARGAS, f) for f in archivos_pdf],
+                            key=os.path.getctime
+                        )
+                        shutil.move(ultimo_archivo, ruta_archivo)
+                        cantidad_descargadas += 1
+
+                except Exception as e:
+                    print(f"⚠️ Error al intentar descargar para {nombre_periodo}: {e}")
+                    continue
+
+            # Verificar si hay siguiente página
+            try:
+                boton_siguiente = driver.find_element(By.CLASS_NAME, "ui-paginator-next")
+                clases = boton_siguiente.get_attribute("class")
+
+                if "ui-state-disabled" in clases:
+                    break  # Última página
+
+                boton_siguiente.click()
+                time.sleep(2)  # Esperar recarga
+
+            except Exception:
+                print("⚠️ No se pudo encontrar o hacer clic en el botón de siguiente página.")
+                break
 
         except Exception as e:
-            print(f"⚠️ Error al intentar descargar para {nombre_periodo}: {e}")
-            continue
+            print(f"⚠️ Error al procesar la tabla: {e}")
+            break
 
     print(f"✅ Finalizado. Se descargaron {cantidad_descargadas} archivos nuevos.")
     return [
