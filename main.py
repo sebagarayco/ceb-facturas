@@ -27,11 +27,24 @@ CUENTAS_URL = "https://oficinavirtual.ceb.coop/ov/cuentas.xhtml"
 CARPETA_DESCARGAS = os.getenv("CARPETA_DESCARGAS", "downloads")
 CARPETA_SALIDA = os.getenv("CARPETA_SALIDA", "outputs")
 ARCHIVO_CSV = os.getenv("ARCHIVO_CSV", "output.csv")
+# Configuración de Google Sheets
+GOOGLE_SPREADSHEET_NAME = os.getenv("GOOGLE_SPREADSHEET_NAME", "Facturas CEB")
+GOOGLE_WORKSHEET_NAME = os.getenv("GOOGLE_WORKSHEET_NAME", "Sheet1")
+GOOGLE_CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
 GOOGLE_SPREADSHEET = os.getenv("GOOGLE_SPREADSHEET", "false").lower() == "true"
+GOOGLE_SCOPE = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
 
 # Crear carpetas si no existen
 os.makedirs(CARPETA_DESCARGAS, exist_ok=True)
 os.makedirs(CARPETA_SALIDA, exist_ok=True)
+
+def get_google_client():
+    """Devuelve el cliente autenticado de Google Sheets."""
+    creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS_FILE, scopes=GOOGLE_SCOPE)
+    return gspread.authorize(creds)
 
 def iniciar_sesion():
     """Inicia sesión en la página web y devuelve una instancia del WebDriver."""
@@ -56,32 +69,25 @@ def iniciar_sesion():
     time.sleep(5)  # Esperar a que el inicio de sesión se complete
     return driver
 
-def enviar_a_google_sheets(datos, spreadsheet_name="Facturas CEB", worksheet_name="Sheet1"):
-    """Agrega solo las filas nuevas a la hoja de cálculo de Google Sheets."""
-    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_file("credentials.json", scopes=scope)
-    client = gspread.authorize(creds)
+def enviar_a_google_sheets(datos):
+    client = get_google_client()
 
-    # Abrir o crear el spreadsheet
     try:
-        sheet = client.open(spreadsheet_name)
+        sheet = client.open(GOOGLE_SPREADSHEET_NAME)
     except gspread.SpreadsheetNotFound:
-        sheet = client.create(spreadsheet_name)
+        sheet = client.create(GOOGLE_SPREADSHEET_NAME)
         sheet.share(CEB_USERNAME, perm_type='user', role='writer')
 
-    # Abrir o crear worksheet
     try:
-        worksheet = sheet.worksheet(worksheet_name)
+        worksheet = sheet.worksheet(GOOGLE_WORKSHEET_NAME)
     except gspread.WorksheetNotFound:
-        worksheet = sheet.add_worksheet(title=worksheet_name, rows="100", cols="20")
-        # Agregar encabezados si es nueva
+        worksheet = sheet.add_worksheet(title=GOOGLE_WORKSHEET_NAME, rows="100", cols="20")
         encabezados = [
             "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
             "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
         ]
         worksheet.append_row(encabezados)
 
-    # Obtener archivos ya cargados (columna A)
     registros = worksheet.get_all_values()
     archivos_existentes = {fila[0] for fila in registros[1:] if fila}
 
@@ -90,9 +96,8 @@ def enviar_a_google_sheets(datos, spreadsheet_name="Facturas CEB", worksheet_nam
     for fila in nuevas_filas:
         worksheet.append_row(fila)
 
-    print(f"📤 {len(nuevas_filas)} fila(s) nuevas enviadas a Google Sheets: {spreadsheet_name} -> {worksheet_name}")
+    print(f"📤 {len(nuevas_filas)} fila(s) nuevas enviadas a Google Sheets: {GOOGLE_SPREADSHEET_NAME} -> {GOOGLE_WORKSHEET_NAME}")
     print(f"   📄 Link de la hoja: https://docs.google.com/spreadsheets/d/{sheet.id}")
-
 
 def descargar_pdfs(driver):
     """Descarga los PDFs si no existen localmente, basándose en el nombre del período."""
@@ -236,22 +241,19 @@ def extraer_campos(texto):
         valor_kwh, cargo_fijo, emitida_el, periodo, vencimiento
     )
 
-def obtener_archivos_en_sheets(spreadsheet_name="Facturas CEB", worksheet_name="Sheet1"):
-    """Devuelve un set con los nombres de archivos ya registrados en Google Spreadsheet."""
-    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_file("credentials.json", scopes=scope)
-    client = gspread.authorize(creds)
+def obtener_archivos_en_sheets():
+    client = get_google_client()
 
     try:
-        sheet = client.open(spreadsheet_name)
-        worksheet = sheet.worksheet(worksheet_name)
+        sheet = client.open(GOOGLE_SPREADSHEET_NAME)
+        worksheet = sheet.worksheet(GOOGLE_WORKSHEET_NAME)
         registros = worksheet.get_all_values()
-        return {fila[0] for fila in registros[1:] if fila}  # Ignora encabezado
+        return {fila[0] for fila in registros[1:] if fila}
     except gspread.exceptions.WorksheetNotFound:
-        print(f"⚠️  La hoja '{worksheet_name}' no existe en el spreadsheet '{spreadsheet_name}'.")
+        print(f"⚠️  La hoja '{GOOGLE_WORKSHEET_NAME}' no existe en el spreadsheet '{GOOGLE_SPREADSHEET_NAME}'.")
         return set()
     except gspread.exceptions.SpreadsheetNotFound:
-        print(f"⚠️  El spreadsheet '{spreadsheet_name}' no existe.")
+        print(f"⚠️  El spreadsheet '{GOOGLE_SPREADSHEET_NAME}' no existe.")
         return set()
     except Exception as e:
         print(f"⚠️  Error al acceder a Google Sheets: {e}")
