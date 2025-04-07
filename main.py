@@ -57,36 +57,42 @@ def iniciar_sesion():
     return driver
 
 def enviar_a_google_sheets(datos, spreadsheet_name="Facturas CEB", worksheet_name="Sheet1"):
-    """Envía los datos procesados a una hoja de cálculo de Google Sheets."""
+    """Agrega solo las filas nuevas a la hoja de cálculo de Google Sheets."""
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_file("credentials.json", scopes=scope)
     client = gspread.authorize(creds)
 
-    # Abrir el spreadsheet
+    # Abrir o crear el spreadsheet
     try:
         sheet = client.open(spreadsheet_name)
     except gspread.SpreadsheetNotFound:
         sheet = client.create(spreadsheet_name)
         sheet.share(CEB_USERNAME, perm_type='user', role='writer')
 
+    # Abrir o crear worksheet
     try:
         worksheet = sheet.worksheet(worksheet_name)
-        worksheet.clear()
     except gspread.WorksheetNotFound:
         worksheet = sheet.add_worksheet(title=worksheet_name, rows="100", cols="20")
+        # Agregar encabezados si es nueva
+        encabezados = [
+            "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
+            "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
+        ]
+        worksheet.append_row(encabezados)
 
-    # Encabezados
-    encabezados = [
-        "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
-        "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
-    ]
-    
-    worksheet.append_row(encabezados)
-    for fila in datos:
+    # Obtener archivos ya cargados (columna A)
+    registros = worksheet.get_all_values()
+    archivos_existentes = {fila[0] for fila in registros[1:] if fila}
+
+    nuevas_filas = [fila for fila in datos if fila[0] not in archivos_existentes]
+
+    for fila in nuevas_filas:
         worksheet.append_row(fila)
 
-    print(f"📤 Datos enviados a Google Sheets: {spreadsheet_name} -> {worksheet_name}")
+    print(f"📤 {len(nuevas_filas)} fila(s) nuevas enviadas a Google Sheets: {spreadsheet_name} -> {worksheet_name}")
     print(f"   📄 Link de la hoja: https://docs.google.com/spreadsheets/d/{sheet.id}")
+
 
 def descargar_pdfs(driver):
     """Descarga los PDFs si no existen localmente, basándose en el nombre del período."""
@@ -230,53 +236,101 @@ def extraer_campos(texto):
         valor_kwh, cargo_fijo, emitida_el, periodo, vencimiento
     )
 
+def obtener_archivos_en_sheets(spreadsheet_name="Facturas CEB", worksheet_name="Sheet1"):
+    """Devuelve un set con los nombres de archivos ya registrados en Google Spreadsheet."""
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_file("credentials.json", scopes=scope)
+    client = gspread.authorize(creds)
+
+    try:
+        sheet = client.open(spreadsheet_name)
+        worksheet = sheet.worksheet(worksheet_name)
+        registros = worksheet.get_all_values()
+        return {fila[0] for fila in registros[1:] if fila}  # Ignora encabezado
+    except gspread.exceptions.WorksheetNotFound:
+        print(f"⚠️  La hoja '{worksheet_name}' no existe en el spreadsheet '{spreadsheet_name}'.")
+        return set()
+    except gspread.exceptions.SpreadsheetNotFound:
+        print(f"⚠️  El spreadsheet '{spreadsheet_name}' no existe.")
+        return set()
+    except Exception as e:
+        print(f"⚠️  Error al acceder a Google Sheets: {e}")
+        return set()
+
 def procesar_pdfs(archivos_pdf):
-    """Procesa los PDFs, guarda el texto extraído en .txt y escribe los datos seleccionados en CSV."""
+    """Procesa PDFs solo si no están ya registrados en output.csv o Google Spreadsheet."""
+
     datos_extraidos = []
 
+    # Obtener archivos ya procesados en output.csv
+    archivos_csv = set()
+    if os.path.exists(ARCHIVO_CSV):
+        with open(ARCHIVO_CSV, "r", encoding="utf-8") as archivo_csv:
+            lector = csv.reader(archivo_csv)
+            next(lector, None)  # Saltar encabezado
+            archivos_csv = {fila[0] for fila in lector if fila}  # Nombre del archivo está en la columna 0
+
+    # Obtener archivos ya registrados en Google Spreadsheet
+    archivos_sheets = set()
+    if GOOGLE_SPREADSHEET:
+        print("🔍 Consultando archivos ya cargados en Google Spreadsheet...")
+        archivos_sheets = obtener_archivos_en_sheets()
+
     for pdf in archivos_pdf:
-        if os.path.exists(pdf):
-            nombre_pdf = os.path.basename(pdf)
-            nombre_txt = os.path.splitext(nombre_pdf)[0] + ".txt"
-            ruta_txt = os.path.join(CARPETA_SALIDA, nombre_txt)
+        nombre_pdf = os.path.basename(pdf)
 
-            # Extraer texto del PDF
-            texto = extract_text_from_pdf(pdf)
+        ya_en_csv = nombre_pdf in archivos_csv
+        ya_en_sheets = nombre_pdf in archivos_sheets
 
-            # Guardar texto extraído en archivo .txt
-            with open(ruta_txt, "w", encoding="utf-8") as archivo_txt:
-                archivo_txt.write(texto)
+        if ya_en_csv and (not GOOGLE_SPREADSHEET or ya_en_sheets):
+            print(f"ℹ️  Ya procesado: {nombre_pdf}, omitiendo.")
+            continue
 
-            # Extraer campos específicos
-            (
-                consumo, fecha_limite_pago, consumo_ultimo_ano, consumo_promedio_diario, 
-                valor_kwh, cargo_fijo, emitida_el, periodo, vencimiento
-            ) = extraer_campos(texto)
+        if not os.path.exists(pdf):
+            print(f"⚠️  Archivo no encontrado (pero ya estaba registrado): {nombre_pdf}, omitiendo.")
+            continue
 
-            datos_extraidos.append([
-                nombre_pdf, periodo, emitida_el, fecha_limite_pago, vencimiento, consumo, 
-                consumo_ultimo_ano, consumo_promedio_diario, cargo_fijo, valor_kwh 
-            ])
-        else:
-            print(f"⚠️ Archivo no encontrado, omitiendo: {pdf}")
+        print(f"📄 Procesando nuevo archivo: {nombre_pdf}")
+        nombre_txt = os.path.splitext(nombre_pdf)[0] + ".txt"
+        ruta_txt = os.path.join(CARPETA_SALIDA, nombre_txt)
 
-    # Guardar datos extraídos en CSV
-    with open(ARCHIVO_CSV, "w", newline="", encoding="utf-8") as archivo_csv:
-        escritor = csv.writer(archivo_csv)
-        escritor.writerow([
-            "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
-            "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
+        texto = extract_text_from_pdf(pdf)
+
+        with open(ruta_txt, "w", encoding="utf-8") as archivo_txt:
+            archivo_txt.write(texto)
+
+        (
+            consumo, fecha_limite_pago, consumo_ultimo_ano, consumo_promedio_diario, 
+            valor_kwh, cargo_fijo, emitida_el, periodo, vencimiento
+        ) = extraer_campos(texto)
+
+        datos_extraidos.append([
+            nombre_pdf, periodo, emitida_el, fecha_limite_pago, vencimiento, consumo, 
+            consumo_ultimo_ano, consumo_promedio_diario, cargo_fijo, valor_kwh 
         ])
+
+    if not datos_extraidos:
+        print("✅ No hay nuevos archivos para procesar.")
+        return
+
+    # Escribir nuevas líneas en el CSV
+    archivo_existe = os.path.exists(ARCHIVO_CSV)
+    with open(ARCHIVO_CSV, "a", newline="", encoding="utf-8") as archivo_csv:
+        escritor = csv.writer(archivo_csv)
+        if not archivo_existe:
+            escritor.writerow([
+                "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
+                "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
+            ])
         escritor.writerows(datos_extraidos)
 
-    print(f"✅ Se procesaron {len(archivos_pdf)} PDFs. Datos guardados en {ARCHIVO_CSV}.")
+    print(f"✅ Se procesaron {len(datos_extraidos)} archivos nuevos. Actualizado {ARCHIVO_CSV}.")
 
-    # Enviar a Google Sheets
     if GOOGLE_SPREADSHEET:
-        print("📊 Enviando datos a Google Sheets...")
         enviar_a_google_sheets(datos_extraidos)
     else:
-        print("⚠️  Envío a Google Spreadsheet desactivado. Para activarlo, setear GOOGLE_SPREADSHEET='true' en las variables de entorno.")        
+        print("⚠️  Envío a Google Spreadsheet desactivado.")
+
 
 if __name__ == "__main__":
     driver = iniciar_sesion()
