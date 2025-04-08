@@ -42,12 +42,15 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
             type=sha
 
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Build and push Docker image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          file: Dockerfile
           push: true
+          provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
