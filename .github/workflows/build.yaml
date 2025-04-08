@@ -1,10 +1,14 @@
-name: Build & Push
+name: Docker build
 
 on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
   pull_request:
-    branches: [main]
-  release:
-    types: [published]
+    branches:
+      - main
 
 jobs:
   docker:
@@ -25,19 +29,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set tag
-        id: set_tag
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "tag=beta" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
-          fi
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ghcr.io/sebagarayco/ceb-facturas
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr,suffix=-beta
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+            type=sha
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
+          context: .
+          file: Dockerfile
           push: true
-          tags: ${{ matrix.image }}:${{ steps.set_tag.outputs.tag }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
