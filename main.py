@@ -48,12 +48,20 @@ def get_google_client():
 
 def iniciar_sesion():
     """Inicia sesión en la página web y devuelve una instancia del WebDriver."""
-    servicio = Service(ChromeDriverManager().install())
+    
+
     opciones = webdriver.ChromeOptions()
+    
+    # Configura la carpeta de descargas
     prefs = {"download.default_directory": os.path.abspath(CARPETA_DESCARGAS)}
     opciones.add_experimental_option("prefs", prefs)
+    
+    # Modo headless para ejecución sin interfaz
+    opciones.add_argument('--headless')
+    opciones.add_argument('--no-sandbox')
+    opciones.add_argument('--disable-dev-shm-usage')
 
-    driver = webdriver.Chrome(service=servicio, options=opciones)
+    driver = webdriver.Chrome(options=opciones)
     driver.get(LOGIN_URL)
 
     espera = WebDriverWait(driver, 10)
@@ -72,6 +80,11 @@ def iniciar_sesion():
 def enviar_a_google_sheets(datos):
     client = get_google_client()
 
+    ENCABEZADOS = [
+        "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
+        "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
+    ]
+
     try:
         sheet = client.open(GOOGLE_SPREADSHEET_NAME)
     except gspread.SpreadsheetNotFound:
@@ -82,11 +95,14 @@ def enviar_a_google_sheets(datos):
         worksheet = sheet.worksheet(GOOGLE_WORKSHEET_NAME)
     except gspread.WorksheetNotFound:
         worksheet = sheet.add_worksheet(title=GOOGLE_WORKSHEET_NAME, rows="100", cols="20")
-        encabezados = [
-            "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
-            "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
-        ]
-        worksheet.append_row(encabezados)
+        worksheet.append_row(ENCABEZADOS)
+    else:
+        # Si la hoja ya existe, validar los encabezados
+        primera_fila = worksheet.row_values(1)
+        if primera_fila != ENCABEZADOS:
+            if primera_fila:
+                worksheet.delete_rows(1)  # Borra la fila si ya hay algo incorrecto
+            worksheet.insert_row(ENCABEZADOS, index=1)
 
     registros = worksheet.get_all_values()
     archivos_existentes = {fila[0] for fila in registros[1:] if fila}
@@ -98,6 +114,7 @@ def enviar_a_google_sheets(datos):
 
     print(f"📤 {len(nuevas_filas)} fila(s) nuevas enviadas a Google Sheets: {GOOGLE_SPREADSHEET_NAME} -> {GOOGLE_WORKSHEET_NAME}")
     print(f"   📄 Link de la hoja: https://docs.google.com/spreadsheets/d/{sheet.id}")
+
 
 def descargar_pdfs(driver):
     """Descarga los PDFs si no existen localmente, basándose en el nombre del período."""
@@ -264,13 +281,30 @@ def procesar_pdfs(archivos_pdf):
 
     datos_extraidos = []
 
+    # Definir encabezados estándar
+    headers = [
+        "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
+        "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
+    ]
+
     # Obtener archivos ya procesados en output.csv
     archivos_csv = set()
     if os.path.exists(ARCHIVO_CSV):
         with open(ARCHIVO_CSV, "r", encoding="utf-8") as archivo_csv:
             lector = csv.reader(archivo_csv)
-            next(lector, None)  # Saltar encabezado
-            archivos_csv = {fila[0] for fila in lector if fila}  # Nombre del archivo está en la columna 0
+            primera_fila = next(lector, None)
+
+            # Validar encabezados
+            if primera_fila != headers:
+                print("⚠️  Encabezados CSV incorrectos o faltantes. Corrigiendo...")
+                registros = list(lector)
+                with open(ARCHIVO_CSV, "w", newline="", encoding="utf-8") as archivo_corregido:
+                    escritor = csv.writer(archivo_corregido)
+                    escritor.writerow(headers)
+                    escritor.writerows(registros)
+                    archivos_csv = {fila[0] for fila in registros if fila}
+            else:
+                archivos_csv = {fila[0] for fila in lector if fila}
 
     # Obtener archivos ya registrados en Google Spreadsheet
     archivos_sheets = set()
@@ -278,6 +312,7 @@ def procesar_pdfs(archivos_pdf):
         print("🔍 Consultando archivos ya cargados en Google Spreadsheet...")
         archivos_sheets = obtener_archivos_en_sheets()
 
+    # Procesar PDFs nuevos
     for pdf in archivos_pdf:
         nombre_pdf = os.path.basename(pdf)
 
@@ -316,25 +351,13 @@ def procesar_pdfs(archivos_pdf):
         return
 
     # Escribir nuevas líneas en el CSV
-    headers = [
-        "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
-        "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
-    ]
     archivo_existe = os.path.exists(ARCHIVO_CSV)
-    escribir_encabezados = True
-    
-    if archivo_existe:
-        with open(ARCHIVO_CSV, "r", encoding="utf-8") as archivo_csv:
-            primera_linea = archivo_csv.readline().strip()
-            if primera_linea:
-                escribir_encabezados = primera_linea.split(",") != headers
-    
     with open(ARCHIVO_CSV, "a", newline="", encoding="utf-8") as archivo_csv:
         escritor = csv.writer(archivo_csv)
-        if not archivo_existe or escribir_encabezados:
+        if not archivo_existe:
             escritor.writerow(headers)
         escritor.writerows(datos_extraidos)
-    
+
     print(f"✅ Se procesaron {len(datos_extraidos)} archivos nuevos. Actualizado {ARCHIVO_CSV}.")
 
     if GOOGLE_SPREADSHEET:
