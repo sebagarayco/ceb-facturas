@@ -125,7 +125,7 @@ def descargar_pdfs(driver):
 
     # Cambiar el dropdown de cantidad de filas a 36 (máximo)
     try:
-        selector_filas = espera.until(EC.presence_of_element_located((By.ID, "form:tblFacturasCuenta:j_id19")))
+        selector_filas = espera.until(EC.presence_of_element_located((By.NAME, "form:tblFacturasCuenta_rppDD")))
         opciones = selector_filas.find_elements(By.TAG_NAME, "option")
         for opcion in opciones:
             if opcion.text.strip() == "36":
