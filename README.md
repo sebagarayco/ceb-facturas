@@ -85,6 +85,21 @@ Este script utiliza:
 5. Comparte el Google Spreadsheet con el correo de la cuenta de servicio (ej. `nombre-cuenta@nombre-proyecto.iam.gserviceaccount.com`) con permisos de **Editor**.
 6. Descargar credenciales y colocarlar en archivo `credentials.json`.
 
+## Test local
+
+1. Buildear imagen: `docker build --platform linux/amd64 -t ceb-facturas:local .`
+2. Ejecutar con:
+   ```
+   docker run --platform linux/amd64 --rm \
+     -v "$(pwd)/downloads:/app/downloads" \
+     -v "$(pwd)/outputs:/app/outputs" \
+     -v "$(pwd)/credentials.json:/app/credentials.json" \
+     -e CEB_USERNAME='<....MAIL....>' \
+     -e CEB_PASSWORD='<....PASSWORD....>' \
+     -e GOOGLE_SPREADSHEET=true \
+     ceb-facturas:local
+   ```
+
 ## Output
 
 - CSV:

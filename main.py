@@ -24,9 +24,9 @@ if not CEB_USERNAME or not CEB_PASSWORD:
 # Constantes
 LOGIN_URL = "https://oficinavirtual.ceb.coop/index.xhtml"
 CUENTAS_URL = "https://oficinavirtual.ceb.coop/ov/cuentas.xhtml"
-CARPETA_DESCARGAS = os.getenv("CARPETA_DESCARGAS", "downloads")
-CARPETA_SALIDA = os.getenv("CARPETA_SALIDA", "outputs")
-ARCHIVO_CSV = os.getenv("ARCHIVO_CSV", "output.csv")
+CARPETA_DESCARGAS = os.getenv("CARPETA_DESCARGAS", "/app/downloads")
+CARPETA_SALIDA = os.getenv("CARPETA_SALIDA", "/app/outputs")
+ARCHIVO_CSV = os.getenv("ARCHIVO_CSV", "/app/output.csv")
 # Configuración de Google Sheets
 GOOGLE_SPREADSHEET_NAME = os.getenv("GOOGLE_SPREADSHEET_NAME", "Facturas CEB")
 GOOGLE_WORKSHEET_NAME = os.getenv("GOOGLE_WORKSHEET_NAME", "Sheet1")
