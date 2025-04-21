@@ -4,6 +4,7 @@ import csv
 import re
 import shutil
 import gspread
+import PyPDF2
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select
@@ -40,6 +41,14 @@ GOOGLE_SCOPE = [
 # Crear carpetas si no existen
 os.makedirs(CARPETA_DESCARGAS, exist_ok=True)
 os.makedirs(CARPETA_SALIDA, exist_ok=True)
+
+def extract_text_from_pdf(pdf_path):
+    with open(pdf_path, "rb") as file:
+        reader = PyPDF2.PdfReader(file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\\n"
+    return text.strip()
 
 def get_google_client():
     """Devuelve el cliente autenticado de Google Sheets."""
