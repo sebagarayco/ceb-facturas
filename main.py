@@ -90,7 +90,7 @@ def enviar_a_google_sheets(datos):
 
     ENCABEZADOS = [
         "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
-        "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
+        "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH", "Monto Total"
     ]
 
     try:
@@ -223,6 +223,7 @@ def extraer_campos(texto):
     emitida_el = None
     periodo = None
     vencimiento = None
+    monto_total = None
 
     # Extraer "Consumo"
     match_consumo = re.search(r"TARIFA:T1R1 M CONSUMO:\s*(\d+)", texto)
@@ -261,9 +262,15 @@ def extraer_campos(texto):
         periodo = match_fechas.group(2)
         vencimiento = match_fechas.group(3)
 
+    # Extraer Monto Total de "Segundo vencimiento"
+    match_monto = re.findall(r'(\d{2}/\d{2}/\d{4})\s*\n\s*\$ ([\d.,]+)', texto)
+    if match_monto:
+        _, monto_total = match_monto[-1]
+        monto_total = monto_total.replace(",", "")
+
     return (
         consumo, fecha_limite_pago, consumo_ultimo_ano, consumo_promedio_diario, 
-        valor_kwh, cargo_fijo, emitida_el, periodo, vencimiento
+        valor_kwh, cargo_fijo, emitida_el, periodo, vencimiento, monto_total
     )
 
 def obtener_archivos_en_sheets():
@@ -292,7 +299,7 @@ def procesar_pdfs(archivos_pdf):
     # Definir encabezados estándar
     headers = [
         "Archivo", "Periodo", "Emitida el", "Fecha Límite de Pago", "Vencimiento",
-        "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH"
+        "Consumo KwH", "Consumo Último Año", "Consumo Promedio Diario", "Cargo Fijo", "Valor KwH", "Monto Total"
     ]
 
     # Obtener archivos ya procesados en output.csv
@@ -346,12 +353,12 @@ def procesar_pdfs(archivos_pdf):
 
         (
             consumo, fecha_limite_pago, consumo_ultimo_ano, consumo_promedio_diario, 
-            valor_kwh, cargo_fijo, emitida_el, periodo, vencimiento
+            valor_kwh, cargo_fijo, emitida_el, periodo, vencimiento, monto_total
         ) = extraer_campos(texto)
 
         datos_extraidos.append([
             nombre_pdf, periodo, emitida_el, fecha_limite_pago, vencimiento, consumo, 
-            consumo_ultimo_ano, consumo_promedio_diario, cargo_fijo, valor_kwh 
+            consumo_ultimo_ano, consumo_promedio_diario, cargo_fijo, valor_kwh, monto_total
         ])
 
     if not datos_extraidos:
